@@ -1,0 +1,47 @@
+# ============================================
+# RAG Application — Groq API + ChromaDB
+# Python: 3.12 recommended for broad compatibility
+# Install: uv pip install -r requirements.txt
+# ============================================
+
+# Groq-hosted LLM integration
+langchain-groq
+groq
+
+# LangChain RAG components
+langchain
+langchain-core
+langchain-community
+langchain-text-splitters
+langchain-classic
+langchain-huggingface
+
+# Vector database
+chromadb
+langchain-chroma
+
+# Embeddings (runs locally; downloads a model when first used)
+sentence-transformers
+
+# Document loading / parsing
+pypdf
+python-docx
+unstructured
+
+# Environment variables and configuration
+python-dotenv
+pydantic
+pydantic-settings
+
+# Web application UI
+streamlit
+
+# Data handling / utilities
+numpy
+pandas
+requests
+tiktoken
+arxiv
+
+# Optional: useful for testing and development
+pytest

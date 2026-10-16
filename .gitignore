@@ -1,0 +1,24 @@
+# Environment files and secrets
+.env
+.env.*
+!.env.example
+
+# Python environments and generated files
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local vector database and model caches
+chroma_db/
+.cache/
+
+# Local editor and OS files
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+
+# Streamlit secrets, if used locally
+.streamlit/secrets.toml
