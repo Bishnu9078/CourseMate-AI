@@ -36,11 +36,41 @@ Books, PDFs, chats, and study progress are saved locally in the ignored `.course
 
 ## Project workflow
 
-1. Upload a text-based PDF in the Streamlit app and choose **Index this book**.
-2. CourseMate extracts the pages, splits their text into overlapping passages, and creates local embeddings for search.
-3. The PDF and book details are saved locally. The searchable vector index stays in memory and can be rebuilt from the saved PDF after a restart.
-4. When you ask a question, CourseMate uses maximum marginal relevance (MMR) to find relevant passages, then sends those passages and your question to the language model for a book-grounded answer with page references.
-5. You can also generate flashcards or a quiz from the book. Conversations, study materials, and progress are saved locally.
+```mermaid
+flowchart TD
+    A([Start]) --> B[Upload a text-based PDF]
+    B --> C{PDF is valid and readable?}
+    C -- No --> D[Show an error and choose another PDF]
+    D --> B
+    C -- Yes --> E[Extract page text]
+    E --> F[Split text into overlapping passages]
+    F --> G[Create local embeddings]
+    G --> H[Build an in-memory vector index]
+    G --> I[Save PDF and book details locally]
+    H --> J{Choose an activity}
+
+    J -- Ask a question --> K[Find relevant passages with MMR]
+    K --> L[Send passages and question to the language model]
+    L --> M[Show a grounded answer with page references]
+    M --> J
+
+    J -- Study --> N[Generate flashcards or a quiz]
+    N --> O[Save conversations, study materials, and progress locally]
+    O --> J
+
+    I --> P[Restart the app]
+    P --> Q[Rebuild the in-memory index from the saved PDF]
+    Q --> J
+
+    classDef start fill:#dbeafe,stroke:#2563eb,color:#172554
+    classDef process fill:#f1f5f9,stroke:#64748b,color:#0f172a
+    classDef decision fill:#fef3c7,stroke:#d97706,color:#78350f
+    classDef result fill:#dcfce7,stroke:#16a34a,color:#14532d
+    class A start
+    class C,J decision
+    class M,O result
+    class B,D,E,F,G,H,I,K,L,N,P,Q process
+```
 
 ## Setup
 
