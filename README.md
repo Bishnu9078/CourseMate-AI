@@ -63,6 +63,21 @@ flowchart LR
     class C,D,F,H,J,K process
 ```
 
+## Project layout
+
+```text
+.
+├── streamlit_app.py          # Upload, saved bookshelf, and study interface
+├── create_database.py        # PDF parsing, chunking, and in-memory indexing
+├── coursemate_store.py       # Local SQLite persistence for books and study progress
+├── study_mode.py             # Book-grounded flashcard and quiz generation
+├── main.py                   # Shared retrieval and answer generation
+├── document loaders/         # Sample PDFs and document-loader examples
+├── retrievers/               # Retrieval experiments
+└── vector store/             # In-memory vector-store example
+```
+
+
 ## Setup
 
 From the project root, create and activate a virtual environment, then install the dependencies:
@@ -108,18 +123,4 @@ To build the index and print its page and passage counts without starting a chat
 
 ```powershell
 python create_database.py
-```
-
-## Project layout
-
-```text
-.
-├── streamlit_app.py          # Upload, saved bookshelf, and study interface
-├── create_database.py        # PDF parsing, chunking, and in-memory indexing
-├── coursemate_store.py       # Local SQLite persistence for books and study progress
-├── study_mode.py             # Book-grounded flashcard and quiz generation
-├── main.py                   # Shared retrieval and answer generation
-├── document loaders/         # Sample PDFs and document-loader examples
-├── retrievers/               # Retrieval experiments
-└── vector store/             # In-memory vector-store example
 ```
