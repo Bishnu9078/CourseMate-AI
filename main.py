@@ -68,7 +68,12 @@ def build_prompt(question: str, documents: list[Document]):
 
 def get_llm(api_key: str | None = None) -> ChatGroq:
     """Create the Groq chat model, optionally using a per-session API key."""
-    options = {"model": MODEL_NAME, "temperature": 0}
+    options = {
+        "model": MODEL_NAME,
+        "temperature": 0,
+        "timeout": 90,
+        "max_retries": 5,
+    }
     if api_key:
         options["api_key"] = api_key
     return ChatGroq(**options)

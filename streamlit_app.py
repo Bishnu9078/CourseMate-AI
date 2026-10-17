@@ -8,11 +8,13 @@ from html import escape
 from pathlib import Path
 from uuid import uuid4
 
+from groq import APIConnectionError
 import streamlit as st
 from dotenv import load_dotenv
 from streamlit.errors import StreamlitSecretNotFoundError
 
 from create_database import index_uploaded_pdf
+from coursemate_store import CourseMateStore
 from main import (
     NO_ANSWER,
     build_prompt,
@@ -20,6 +22,7 @@ from main import (
     get_llm,
     retrieve_documents,
 )
+from study_mode import generate_flashcards, generate_quiz
 
 
 st.set_page_config(
@@ -104,26 +107,43 @@ st.markdown(
         letter-spacing: .11em;
         text-transform: uppercase;
     }
+    .coursemate-footer {
+        position: fixed;
+        z-index: 1000;
+        bottom: .75rem;
+        left: calc(50% + 11.7rem);
+        transform: translateX(-50%);
+        color: #8991a5;
+        font-size: .74rem;
+        line-height: 1;
+        pointer-events: none;
+    }
+    @media (max-width: 768px) {
+        .coursemate-footer {
+            left: 50%;
+            bottom: .4rem;
+        }
+    }
     </style>
     """,
     unsafe_allow_html=True,
 )
 
 
-APP_STATE_VERSION = 2
-if st.session_state.get("_coursemate_state_version") != APP_STATE_VERSION:
-    for state_key in (
-        "active_book",
-        "messages",
-        "notice",
-        "books",
-        "book_indexes",
-        "chat_threads",
-        "chat_order",
-        "active_chat_id",
-    ):
-        st.session_state.pop(state_key, None)
-    st.session_state["_coursemate_state_version"] = APP_STATE_VERSION
+def book_fingerprint(book: dict[str, str | int] | None) -> str | None:
+    if not book:
+        return None
+    fingerprint = str(book.get("fingerprint", ""))
+    return fingerprint if re.fullmatch(r"[0-9a-f]{64}", fingerprint) else None
+
+
+@st.cache_resource
+def get_store() -> CourseMateStore:
+    return CourseMateStore()
+
+
+STORE = get_store()
+APP_STATE_VERSION = 3
 
 for state_key, default_value in (
     ("active_book", None),
@@ -133,8 +153,56 @@ for state_key, default_value in (
     ("book_indexes", {}),
     ("chat_threads", {}),
     ("chat_order", []),
+    ("study_materials", {}),
 ):
     st.session_state.setdefault(state_key, default_value)
+
+# Merge durable data once per browser session while preserving any in-memory
+# conversation state from a session that was already open during an app update.
+if not st.session_state.get("_coursemate_storage_loaded"):
+    stored_books = STORE.list_books()
+    current_books = st.session_state.books
+    merged_books = {str(book["fingerprint"]): book for book in stored_books}
+    merged_books.update(
+        {str(book["fingerprint"]): book for book in current_books if book.get("fingerprint")}
+    )
+    st.session_state.books = list(merged_books.values())
+
+    loaded_chats = STORE.load_chats()
+    persisted_threads = {chat["id"]: chat for chat in loaded_chats}
+    current_threads = st.session_state.chat_threads
+    persisted_threads.update(current_threads)
+    for chat_id, chat in persisted_threads.items():
+        chat.setdefault("id", chat_id)
+        chat.setdefault("fingerprint", book_fingerprint(chat.get("book")))
+        chat.setdefault("messages", [])
+        fingerprint = chat.get("fingerprint")
+        chat["book"] = next(
+            (book for book in st.session_state.books if book.get("fingerprint") == fingerprint),
+            chat.get("book"),
+        )
+    st.session_state.chat_threads = persisted_threads
+
+    current_order = [
+        chat_id for chat_id in st.session_state.chat_order
+        if chat_id in persisted_threads
+    ]
+    loaded_order = [chat["id"] for chat in loaded_chats if chat["id"] in persisted_threads]
+    st.session_state.chat_order = list(dict.fromkeys(current_order + loaded_order))
+    st.session_state.chat_order.extend(
+        chat_id for chat_id in persisted_threads if chat_id not in st.session_state.chat_order
+    )
+
+    active_chat_id = st.session_state.get("active_chat_id")
+    if active_chat_id not in persisted_threads:
+        active_chat_id = st.session_state.chat_order[0] if st.session_state.chat_order else None
+    st.session_state.active_chat_id = active_chat_id
+    if active_chat_id:
+        active_chat = persisted_threads[active_chat_id]
+        st.session_state.active_book = active_chat.get("book")
+        st.session_state.messages = active_chat["messages"]
+    st.session_state["_coursemate_storage_loaded"] = True
+st.session_state["_coursemate_state_version"] = APP_STATE_VERSION
 
 
 def configured_api_key() -> str | None:
@@ -153,18 +221,12 @@ def configured_api_key() -> str | None:
     return None
 
 
-def book_fingerprint(book: dict[str, str | int] | None) -> str | None:
-    if not book:
-        return None
-    fingerprint = str(book.get("fingerprint", ""))
-    return fingerprint if re.fullmatch(r"[0-9a-f]{64}", fingerprint) else None
-
-
 def create_chat(book: dict[str, str | int] | None = None) -> str:
     """Start a blank chat and optionally keep the current book selected."""
     chat_id = uuid4().hex
     fingerprint = book_fingerprint(book)
     st.session_state.chat_threads[chat_id] = {
+        "id": chat_id,
         "title": "New chat",
         "fingerprint": fingerprint,
         "book": book,
@@ -209,6 +271,35 @@ def title_chat_from_input() -> None:
     set_active_chat_title(st.session_state.get("question_input", ""))
 
 
+def persist_active_chat() -> None:
+    chat_id = st.session_state.get("active_chat_id")
+    chat = st.session_state.chat_threads.get(chat_id) if chat_id else None
+    if not chat:
+        return
+    chat["id"] = chat_id
+    chat["fingerprint"] = book_fingerprint(chat.get("book")) or chat.get("fingerprint")
+    STORE.save_chat(chat)
+
+
+def load_book_index(book: dict[str, str | int], progress=None):
+    """Return a cached index or rebuild it from the locally saved PDF."""
+    fingerprint = book_fingerprint(book)
+    if not fingerprint:
+        return None
+    vectorstore = st.session_state.book_indexes.get(fingerprint)
+    if vectorstore is not None:
+        return vectorstore
+
+    pdf_data = STORE.get_book_pdf(fingerprint)
+    if pdf_data is None:
+        return None
+    if progress is not None:
+        progress.write("Restoring the book index from the saved PDF…")
+    _, vectorstore = index_uploaded_pdf(pdf_data, str(book.get("filename", "book.pdf")))
+    st.session_state.book_indexes[fingerprint] = vectorstore
+    return vectorstore
+
+
 # Keep the current conversation when an app update adds chat history to an
 # already-open browser session.
 if not st.session_state.chat_threads and (
@@ -222,6 +313,7 @@ if not st.session_state.chat_threads and (
         "New chat",
     )
     st.session_state.chat_threads[legacy_chat_id] = {
+        "id": legacy_chat_id,
         "title": str(first_question).replace("\n", " ")[:36],
         "fingerprint": book_fingerprint(legacy_book),
         "book": legacy_book,
@@ -231,6 +323,8 @@ if not st.session_state.chat_threads and (
     st.session_state.active_chat_id = legacy_chat_id
 elif st.session_state.get("active_chat_id") not in st.session_state.chat_threads:
     st.session_state.active_chat_id = None
+
+persist_active_chat()
 
 
 def render_sources(sources: list[dict[str, str | int]]) -> None:
@@ -269,6 +363,152 @@ def switch_book(book: dict[str, str | int]) -> None:
     chat["book"] = book
     st.session_state.messages = chat["messages"]
     st.session_state.active_book = book
+
+
+def _format_pages(pages: list[int]) -> str:
+    return ", ".join(f"p. {page}" for page in pages) if pages else "page reference unavailable"
+
+
+def render_study_mode(book: dict[str, str | int]) -> None:
+    fingerprint = book_fingerprint(book)
+    if not fingerprint:
+        return
+    materials_by_book = st.session_state.study_materials
+    if fingerprint not in materials_by_book:
+        materials_by_book[fingerprint] = STORE.load_study_materials(fingerprint)
+    materials = materials_by_book[fingerprint]
+
+    with st.expander("Study mode · flashcards and quiz", expanded=False):
+        st.caption("Generated questions use retrieved passages from this book and keep their page references.")
+        flashcard_column, quiz_column = st.columns(2)
+        with flashcard_column:
+            make_flashcards = st.button(
+                "Generate flashcards",
+                icon=":material/style:",
+                width="stretch",
+                key=f"generate_flashcards_{fingerprint}",
+            )
+        with quiz_column:
+            make_quiz = st.button(
+                "Generate quiz",
+                icon=":material/quiz:",
+                width="stretch",
+                key=f"generate_quiz_{fingerprint}",
+            )
+
+        if make_flashcards or make_quiz:
+            api_key = configured_api_key()
+            if not api_key:
+                st.warning("Set GROQ_API_KEY in your local .env file or Streamlit secrets to generate study material.")
+            else:
+                action = "flashcards" if make_flashcards else "quiz"
+                progress = None
+                try:
+                    with st.status(f"Creating {action} from your book", expanded=True) as progress:
+                        vectorstore = load_book_index(book, progress)
+                        if vectorstore is None:
+                            raise ValueError("This saved book file is unavailable. Re-upload and index the PDF to continue.")
+                        progress.write("Finding relevant passages…")
+                        llm = get_llm(api_key)
+                        if make_flashcards:
+                            material = generate_flashcards(vectorstore, llm)
+                            materials["flashcards"] = material
+                            STORE.save_study_material(fingerprint, "flashcards", material)
+                        else:
+                            material = generate_quiz(vectorstore, llm)
+                            materials["quiz"] = material
+                            STORE.save_study_material(fingerprint, "quiz", material)
+                        progress.update(label=f"Your {action} is ready", state="complete", expanded=False)
+                except Exception as error:
+                    if progress is not None:
+                        progress.update(
+                            label=f"Could not create {action}",
+                            state="error",
+                            expanded=True,
+                        )
+                    if isinstance(error, APIConnectionError):
+                        st.error(
+                            "Could not reach Groq to create study material. Check your internet "
+                            "connection and any VPN, proxy, or firewall, then try again. "
+                            "The request is retried automatically."
+                        )
+                        cause = error.__cause__
+                        if cause:
+                            st.caption(
+                                f"Connection detail: {type(cause).__name__}: {cause}"
+                            )
+                    else:
+                        st.error(f"Could not create study material: {error}")
+
+        flashcards = materials.get("flashcards")
+        if flashcards and flashcards.get("cards"):
+            cards = flashcards["cards"]
+            known_before = {
+                index for index in flashcards.get("known_indices", [])
+                if isinstance(index, int) and 0 <= index < len(cards)
+            }
+            known_now = set()
+            st.markdown(f"#### Flashcards · {len(cards)}")
+            st.caption(f"{len(known_before)} of {len(cards)} marked as learned")
+            for index, card in enumerate(cards):
+                with st.container(border=True):
+                    st.markdown(f"**{index + 1}. {card.get('front', '')}**")
+                    with st.expander("Show answer"):
+                        st.write(card.get("back", ""))
+                        st.caption(f"Source: {_format_pages(card.get('pages', []))}")
+                    known_key = f"known_{fingerprint}_{flashcards.get('id', 'saved')}_{index}"
+                    if known_key not in st.session_state:
+                        st.session_state[known_key] = index in known_before
+                    if st.checkbox("Mark as learned", key=known_key):
+                        known_now.add(index)
+            if known_now != known_before:
+                flashcards["known_indices"] = sorted(known_now)
+                STORE.save_study_material(fingerprint, "flashcards", flashcards)
+
+        quiz = materials.get("quiz")
+        if quiz and quiz.get("questions"):
+            questions = quiz["questions"]
+            st.markdown(f"#### Practice quiz · {len(questions)} questions")
+            selected_answers = {}
+            with st.form(f"quiz_form_{fingerprint}_{quiz.get('id', 'saved')}"):
+                for index, item in enumerate(questions):
+                    labels = [
+                        f"{letter}. {item.get('options', {}).get(letter, '')}"
+                        for letter in ("A", "B", "C", "D")
+                    ]
+                    selected_answers[str(index)] = st.radio(
+                        f"{index + 1}. {item.get('question', '')}",
+                        options=["Select an answer"] + labels,
+                        key=f"quiz_answer_{fingerprint}_{quiz.get('id', 'saved')}_{index}",
+                    )
+                submitted = st.form_submit_button("Check answers", width="stretch")
+
+            if submitted:
+                answers = {
+                    index: choice.partition(".")[0] if choice != "Select an answer" else ""
+                    for index, choice in selected_answers.items()
+                }
+                score = sum(
+                    answers.get(str(index)) == item.get("answer")
+                    for index, item in enumerate(questions)
+                )
+                quiz["answers"] = answers
+                quiz["score"] = score
+                STORE.save_study_material(fingerprint, "quiz", quiz)
+
+            if quiz.get("score") is not None and isinstance(quiz.get("answers"), dict):
+                st.success(f"Score: {quiz['score']} of {len(questions)}")
+                for index, item in enumerate(questions):
+                    chosen = quiz["answers"].get(str(index), "")
+                    correct = item.get("answer", "")
+                    if chosen == correct:
+                        st.markdown(f"**{index + 1}. Correct**")
+                    else:
+                        correct_text = item.get("options", {}).get(correct, "")
+                        st.markdown(f"**{index + 1}. Correct answer: {correct}. {correct_text}**")
+                    st.caption(
+                        f"{item.get('explanation', '')} · Source: {_format_pages(item.get('pages', []))}"
+                    )
 
 
 notice = st.session_state.pop("notice", None)
@@ -324,7 +564,7 @@ with st.sidebar:
     }
     if book_lookup:
         st.divider()
-        st.markdown("<div class='coursemate-section-label'>Your bookshelf · this session</div>", unsafe_allow_html=True)
+        st.markdown("<div class='coursemate-section-label'>Your saved bookshelf</div>", unsafe_allow_html=True)
         selected_fingerprint = st.selectbox(
             "Choose an indexed book",
             options=[""] + list(book_lookup),
@@ -346,7 +586,7 @@ with st.sidebar:
             st.rerun()
 
     st.divider()
-    st.caption("PDF indexes stay in memory for this session. Upload again after restarting the app.")
+    st.caption("Books, chats, and study progress are saved locally. Indexes rebuild from saved PDFs when needed.")
 
 
 active_book = st.session_state.active_book
@@ -398,7 +638,9 @@ with st.expander("Add a book or switch to another PDF", expanded=active_book is 
         try:
             with st.status("Making your book searchable", expanded=True) as progress:
                 progress.write("Checking the PDF and extracting its pages…")
-                book_info, vectorstore = index_uploaded_pdf(uploaded_book.getvalue(), uploaded_book.name)
+                pdf_data = uploaded_book.getvalue()
+                book_info, vectorstore = index_uploaded_pdf(pdf_data, uploaded_book.name)
+                STORE.save_book(book_info, pdf_data)
                 st.session_state.book_indexes[book_info["fingerprint"]] = vectorstore
                 st.session_state.books = [
                     book for book in st.session_state.books
@@ -428,6 +670,9 @@ if active_book:
     st.caption("CourseMate searches relevant pages before every answer.")
 else:
     st.info("Your reading room is ready. Add a PDF above or open one from your bookshelf.", icon=":material/menu_book:")
+
+if active_book:
+    render_study_mode(active_book)
 
 
 for message in st.session_state.messages:
@@ -473,6 +718,7 @@ if question and active_book:
         touch_active_chat()
 
     st.session_state.messages.append({"role": "user", "content": question})
+    persist_active_chat()
     with st.chat_message("user"):
         st.markdown(question)
 
@@ -485,38 +731,47 @@ if question and active_book:
             answer = "Set GROQ_API_KEY in your local .env file or Streamlit secrets, then ask again."
             st.info(answer)
         else:
-            fingerprint = book_fingerprint(active_book)
-            vectorstore = st.session_state.book_indexes.get(fingerprint) if fingerprint else None
-            if vectorstore is None:
-                answer = "This book index is unavailable. Re-upload and index the PDF to continue."
+            try:
+                with st.status("Preparing your book", expanded=False) as progress:
+                    vectorstore = load_book_index(active_book, progress)
+                    if vectorstore is None:
+                        raise FileNotFoundError(
+                            "The saved PDF is unavailable. Re-upload and index the PDF to continue."
+                        )
+                    progress.update(label="Searching your book", state="running")
+                    retriever = create_retriever(vectorstore)
+                    documents = retrieve_documents(question, retriever)
+                    if documents:
+                        progress.update(label="Writing a grounded answer", state="running")
+                        response = get_llm(api_key).invoke(build_prompt(question, documents))
+                        answer = str(response.content)
+                        sources = [
+                            {
+                                "page": int(document.metadata["page"]) + 1
+                                if str(document.metadata.get("page", "")).isdigit()
+                                else "",
+                                "text": document.page_content,
+                            }
+                            for document in documents
+                        ]
+                    else:
+                        answer = NO_ANSWER
+                    progress.update(label="Answer ready", state="complete", expanded=False)
+                st.markdown(answer)
+                render_sources(sources)
+            except FileNotFoundError as error:
+                answer = str(error)
+                st.warning(answer)
+            except Exception:
+                answer = "I couldn't complete that answer. Check the Groq API key and connection, then try again."
                 st.error(answer)
-            else:
-                try:
-                    with st.status("Searching your book", expanded=False) as progress:
-                        retriever = create_retriever(vectorstore)
-                        documents = retrieve_documents(question, retriever)
-                        if documents:
-                            progress.update(label="Writing a grounded answer", state="running")
-                            response = get_llm(api_key).invoke(build_prompt(question, documents))
-                            answer = str(response.content)
-                            sources = [
-                                {
-                                    "page": int(document.metadata["page"]) + 1
-                                    if str(document.metadata.get("page", "")).isdigit()
-                                    else "",
-                                    "text": document.page_content,
-                                }
-                                for document in documents
-                            ]
-                        else:
-                            answer = NO_ANSWER
-                        progress.update(label="Answer ready", state="complete", expanded=False)
-                    st.markdown(answer)
-                    render_sources(sources)
-                except Exception:
-                    answer = "I couldn't complete that answer. Check the Groq API key and connection, then try again."
-                    st.error(answer)
 
     st.session_state.messages.append(
         {"role": "assistant", "content": answer, "sources": sources}
     )
+    persist_active_chat()
+
+st.markdown(
+    '<div class="coursemate-footer">© CourseMate Bishnuprasad 2026</div>',
+    unsafe_allow_html=True,
+)

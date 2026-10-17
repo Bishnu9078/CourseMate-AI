@@ -7,11 +7,12 @@ CourseMate AI is a dark-themed PDF study companion. Upload a book, ask questions
 - Upload text-based PDF books up to 50 MB.
 - Search uploaded books with maximum marginal relevance (MMR).
 - Get answers grounded in the book, with supporting page excerpts.
-- Keep multiple chat threads and reopen earlier conversations during the current session.
-- Keep multiple books on a session-only bookshelf.
-- Build vector indexes in memory; CourseMate does not create a Chroma database or save an index to disk.
+- Generate page-cited flashcards and multiple-choice quizzes from a book.
+- Track learned flashcards and save quiz scores.
+- Keep multiple books and chat threads across app restarts.
+- Build vector indexes in memory and rebuild them from saved PDFs when needed.
 
-The PDF is written to a temporary file only while its pages are extracted. The vector index stays in the running app's memory and is cleared when the browser session or app process ends. Upload and index the PDF again after restarting the app.
+Books, PDFs, chats, and study progress are saved locally in the ignored `.coursemate/` directory. A temporary working copy is used during page extraction; vector indexes stay in memory and are rebuilt from the saved PDFs after an app restart. This local store is shared by sessions using the same app installation.
 
 ## Requirements
 
@@ -49,7 +50,7 @@ GROQ_API_KEY = "your_groq_api_key_here"
 streamlit run streamlit_app.py
 ```
 
-Upload a PDF and choose **Index this book**. The first indexing run downloads the local embedding model and can take a few minutes. When indexing finishes, open a suggested prompt or type a question in the chat box. Previously indexed PDFs remain available on the bookshelf for the current session.
+Upload a PDF and choose **Index this book**. The first indexing run downloads the local embedding model and can take a few minutes. When indexing finishes, ask questions or generate flashcards and a quiz. The bookshelf, conversations, and study progress remain available after restarting the app.
 
 ## Command-line mode
 
@@ -69,8 +70,10 @@ python create_database.py
 
 ```text
 .
-├── streamlit_app.py          # Upload, session bookshelf, and chat interface
+├── streamlit_app.py          # Upload, saved bookshelf, and study interface
 ├── create_database.py        # PDF parsing, chunking, and in-memory indexing
+├── coursemate_store.py       # Local SQLite persistence for books and study progress
+├── study_mode.py             # Book-grounded flashcard and quiz generation
 ├── main.py                   # Shared retrieval and answer generation
 ├── document loaders/         # Sample PDFs and document-loader examples
 ├── retrievers/               # Retrieval experiments
