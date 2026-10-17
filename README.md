@@ -10,6 +10,8 @@ CourseMate AI is a dark-themed PDF study companion. Upload a book, ask questions
 - Generate page-cited flashcards and multiple-choice quizzes from a book.
 - Track learned flashcards and save quiz scores.
 - Keep multiple books and chat threads across app restarts.
+- Use the refreshed Streamlit reading-room interface for books, chats, and study tools.
+- Start each new session with a blank chat view; reopen saved conversations independently from the sidebar.
 - Build vector indexes in memory and rebuild them from saved PDFs when needed.
 
 Books, PDFs, chats, and study progress are saved locally in the ignored `.coursemate/` directory. A temporary working copy is used during page extraction; vector indexes stay in memory and are rebuilt from the saved PDFs after an app restart. This local store is shared by sessions using the same app installation.

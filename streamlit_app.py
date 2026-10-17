@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 import re
-from html import escape
 from pathlib import Path
 from uuid import uuid4
 
@@ -35,71 +34,6 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-    .coursemate-hero {
-        position: relative;
-        overflow: hidden;
-        padding: clamp(1.7rem, 4vw, 3.3rem);
-        border: 1px solid rgba(173, 159, 255, .22);
-        border-radius: 26px;
-        background:
-            radial-gradient(circle at 88% 18%, rgba(130, 107, 255, .24), transparent 25%),
-            radial-gradient(circle at 75% 110%, rgba(31, 118, 173, .2), transparent 34%),
-            linear-gradient(118deg, #15162b 0%, #121b31 52%, #102234 100%);
-        box-shadow: 0 22px 60px rgba(0, 0, 0, .25);
-        margin: .4rem 0 1.4rem;
-    }
-    .coursemate-kicker {
-        display: flex;
-        align-items: center;
-        gap: .55rem;
-        color: #c1b8ff;
-        font-size: .72rem;
-        font-weight: 750;
-        letter-spacing: .13em;
-        text-transform: uppercase;
-        margin-bottom: 1.1rem;
-    }
-    .coursemate-kicker-dot {
-        width: .5rem;
-        height: .5rem;
-        border-radius: 50%;
-        background: #a99aff;
-        box-shadow: 0 0 0 5px rgba(169, 154, 255, .14), 0 0 18px rgba(169, 154, 255, .7);
-    }
-    .coursemate-title {
-        color: #f4f3ff;
-        font-size: clamp(2.1rem, 4.8vw, 3.5rem);
-        font-weight: 760;
-        letter-spacing: -.055em;
-        line-height: 1.02;
-        margin: 0;
-        overflow-wrap: anywhere;
-    }
-    .coursemate-title span {
-        color: #b9adff;
-    }
-    .coursemate-copy {
-        max-width: 44rem;
-        color: #c1c9dc;
-        font-size: 1.04rem;
-        line-height: 1.65;
-        margin: 1rem 0 0;
-    }
-    .coursemate-pills {
-        display: flex;
-        flex-wrap: wrap;
-        gap: .55rem;
-        margin-top: 1.3rem;
-    }
-    .coursemate-pills span {
-        padding: .4rem .7rem;
-        border: 1px solid rgba(185, 173, 255, .22);
-        border-radius: 999px;
-        background: rgba(10, 14, 29, .42);
-        color: #e0dcff;
-        font-size: .79rem;
-        font-weight: 600;
-    }
     .coursemate-section-label {
         color: #b9c3da;
         font-size: .74rem;
@@ -108,20 +42,31 @@ st.markdown(
         text-transform: uppercase;
     }
     .coursemate-footer {
-        position: fixed;
-        z-index: 1000;
-        bottom: .75rem;
-        left: calc(50% + 11.7rem);
-        transform: translateX(-50%);
         color: #8991a5;
-        font-size: .74rem;
-        line-height: 1;
-        pointer-events: none;
+        font-size: .78rem;
+        text-align: center;
+        margin: 2.5rem 0 1rem;
+        padding-top: 1.25rem;
+        border-top: 1px solid rgba(137, 145, 165, .18);
+    }
+    .coursemate-eyebrow {
+        color: #a99aff;
+        font-size: .72rem;
+        font-weight: 750;
+        letter-spacing: .12em;
+        text-transform: uppercase;
+        margin: .2rem 0 .45rem;
+    }
+    .coursemate-empty-state {
+        padding: 1.2rem 1.35rem;
+        border: 1px solid rgba(137, 145, 165, .22);
+        border-radius: 1rem;
+        background: rgba(21, 27, 43, .58);
+        margin: 1rem 0;
     }
     @media (max-width: 768px) {
         .coursemate-footer {
-            left: 50%;
-            bottom: .4rem;
+            margin-top: 1.5rem;
         }
     }
     </style>
@@ -143,7 +88,7 @@ def get_store() -> CourseMateStore:
 
 
 STORE = get_store()
-APP_STATE_VERSION = 3
+APP_STATE_VERSION = 4
 
 for state_key, default_value in (
     ("active_book", None),
@@ -157,8 +102,12 @@ for state_key, default_value in (
 ):
     st.session_state.setdefault(state_key, default_value)
 
-# Merge durable data once per browser session while preserving any in-memory
-# conversation state from a session that was already open during an app update.
+state_version_changed = (
+    st.session_state.get("_coursemate_state_version") != APP_STATE_VERSION
+)
+
+# Merge durable data once per browser session while preserving any explicitly
+# selected thread from a session that was already open during an app update.
 if not st.session_state.get("_coursemate_storage_loaded"):
     stored_books = STORE.list_books()
     current_books = st.session_state.books
@@ -193,14 +142,15 @@ if not st.session_state.get("_coursemate_storage_loaded"):
         chat_id for chat_id in persisted_threads if chat_id not in st.session_state.chat_order
     )
 
+    # A new Streamlit browser session starts on an empty landing page. Saved
+    # chats remain in the sidebar and are opened only after an explicit click.
     active_chat_id = st.session_state.get("active_chat_id")
-    if active_chat_id not in persisted_threads:
-        active_chat_id = st.session_state.chat_order[0] if st.session_state.chat_order else None
+    if active_chat_id not in persisted_threads or state_version_changed:
+        active_chat_id = None
     st.session_state.active_chat_id = active_chat_id
     if active_chat_id:
         active_chat = persisted_threads[active_chat_id]
         st.session_state.active_book = active_chat.get("book")
-        st.session_state.messages = active_chat["messages"]
     st.session_state["_coursemate_storage_loaded"] = True
 st.session_state["_coursemate_state_version"] = APP_STATE_VERSION
 
@@ -223,20 +173,26 @@ def configured_api_key() -> str | None:
 
 def create_chat(book: dict[str, str | int] | None = None) -> str:
     """Start a blank chat and optionally keep the current book selected."""
+    persist_active_chat()
     chat_id = uuid4().hex
     fingerprint = book_fingerprint(book)
+    messages: list[dict] = []
     st.session_state.chat_threads[chat_id] = {
         "id": chat_id,
         "title": "New chat",
         "fingerprint": fingerprint,
         "book": book,
-        "messages": [],
+        "messages": messages,
     }
     st.session_state.chat_order.insert(0, chat_id)
     st.session_state.active_chat_id = chat_id
     st.session_state.active_book = book
-    st.session_state.messages = st.session_state.chat_threads[chat_id]["messages"]
     return chat_id
+
+
+def start_new_chat() -> None:
+    """Create a fresh thread while preserving the selected book."""
+    create_chat(st.session_state.active_book)
 
 
 def open_chat(chat_id: str) -> None:
@@ -244,7 +200,6 @@ def open_chat(chat_id: str) -> None:
     chat = st.session_state.chat_threads[chat_id]
     st.session_state.active_chat_id = chat_id
     st.session_state.active_book = chat.get("book")
-    st.session_state.messages = chat["messages"]
     if chat_id in st.session_state.chat_order:
         st.session_state.chat_order.remove(chat_id)
     st.session_state.chat_order.insert(0, chat_id)
@@ -267,8 +222,8 @@ def set_active_chat_title(prompt: str) -> None:
         chat["title"] = prompt.replace("\n", " ").strip()[:36]
 
 
-def title_chat_from_input() -> None:
-    set_active_chat_title(st.session_state.get("question_input", ""))
+def title_chat_from_input(widget_key: str) -> None:
+    set_active_chat_title(st.session_state.get(widget_key, ""))
 
 
 def persist_active_chat() -> None:
@@ -279,6 +234,21 @@ def persist_active_chat() -> None:
     chat["id"] = chat_id
     chat["fingerprint"] = book_fingerprint(chat.get("book")) or chat.get("fingerprint")
     STORE.save_chat(chat)
+
+
+def sync_active_chat_state() -> None:
+    """Use only the explicitly selected thread for the visible conversation."""
+    chat_id = st.session_state.get("active_chat_id")
+    chat = st.session_state.chat_threads.get(chat_id) if chat_id else None
+    if chat is None:
+        st.session_state.active_book = None
+        return
+
+    messages = chat.get("messages")
+    if not isinstance(messages, list):
+        messages = []
+        chat["messages"] = messages
+    st.session_state.active_book = chat.get("book")
 
 
 def load_book_index(book: dict[str, str | int], progress=None):
@@ -300,8 +270,8 @@ def load_book_index(book: dict[str, str | int], progress=None):
     return vectorstore
 
 
-# Keep the current conversation when an app update adds chat history to an
-# already-open browser session.
+# Keep pre-thread session messages as an archived sidebar conversation after
+# an app update, but never select that archived conversation automatically.
 if not st.session_state.chat_threads and (
     st.session_state.messages or st.session_state.active_book
 ):
@@ -320,10 +290,19 @@ if not st.session_state.chat_threads and (
         "messages": legacy_messages,
     }
     st.session_state.chat_order.insert(0, legacy_chat_id)
-    st.session_state.active_chat_id = legacy_chat_id
+    STORE.save_chat(st.session_state.chat_threads[legacy_chat_id])
+    st.session_state.active_chat_id = None
+    st.session_state.active_book = None
+    st.session_state.messages = []
 elif st.session_state.get("active_chat_id") not in st.session_state.chat_threads:
     st.session_state.active_chat_id = None
 
+# Force sessions running the previous UI state onto the fresh landing view.
+# Their old chat remains available in the sidebar and is not discarded.
+if state_version_changed:
+    st.session_state.active_chat_id = None
+
+sync_active_chat_state()
 persist_active_chat()
 
 
@@ -361,7 +340,6 @@ def switch_book(book: dict[str, str | int]) -> None:
 
     chat["fingerprint"] = book_fingerprint(book)
     chat["book"] = book
-    st.session_state.messages = chat["messages"]
     st.session_state.active_book = book
 
 
@@ -520,14 +498,13 @@ with st.sidebar:
     st.markdown("## :material/auto_stories: CourseMate")
     st.caption("Your personal AI reading room")
 
-    if st.button(
+    st.button(
         "New chat",
         icon=":material/add_comment:",
         width="stretch",
         key="new_chat_button",
-    ):
-        create_chat(st.session_state.active_book)
-        st.rerun()
+        on_click=start_new_chat,
+    )
 
     st.markdown("<div class='coursemate-section-label'>Chats</div>", unsafe_allow_html=True)
     if st.session_state.chat_order:
@@ -590,27 +567,22 @@ with st.sidebar:
 
 
 active_book = st.session_state.active_book
-safe_name = escape(str(active_book.get("filename", "your book"))) if active_book else ""
-if active_book:
-    hero_title = f"Let's get curious about<br/><span>{safe_name}</span>"
-    hero_copy = "Ask questions, explore key ideas, and follow each answer back to the pages that support it."
-    hero_pills = "<span>Grounded in your book</span><span>MMR page retrieval</span><span>Source excerpts included</span>"
-else:
-    hero_title = "Turn reading into<br/><span>real understanding.</span>"
-    hero_copy = "Bring a PDF book into your reading room. CourseMate finds the right passages and helps you study them in a conversation."
-    hero_pills = "<span>Upload a PDF</span><span>Ask in plain language</span><span>See supporting pages</span>"
+active_chat_id = st.session_state.get("active_chat_id")
+active_chat = st.session_state.chat_threads.get(active_chat_id) if active_chat_id else None
 
-st.markdown(
-    f"""
-    <section class="coursemate-hero">
-        <div class="coursemate-kicker"><span class="coursemate-kicker-dot"></span>YOUR PERSONAL STUDY COMPANION</div>
-        <h1 class="coursemate-title">{hero_title}</h1>
-        <p class="coursemate-copy">{hero_copy}</p>
-        <div class="coursemate-pills">{hero_pills}</div>
-    </section>
-    """,
-    unsafe_allow_html=True,
-)
+st.markdown('<div class="coursemate-eyebrow">COURSEMATE &middot; PERSONAL READING ROOM</div>', unsafe_allow_html=True)
+st.title("Read, ask, and remember")
+st.caption("Ask questions grounded in your book, then revisit the passages behind each answer.")
+if active_chat:
+    st.markdown(f"#### {active_chat.get('title', 'New chat')}")
+if active_book:
+    with st.container(border=True):
+        book_name = str(active_book.get("filename", "Your book"))
+        st.write("Now reading:", book_name)
+        st.caption(
+            f"{active_book.get('pages', 0)} pages · "
+            f"{active_book.get('chunks', 0)} searchable passages"
+        )
 
 
 with st.expander("Add a book or switch to another PDF", expanded=active_book is None):
@@ -658,6 +630,14 @@ with st.expander("Add a book or switch to another PDF", expanded=active_book is 
 
 
 active_book = st.session_state.active_book
+active_chat_id = st.session_state.get("active_chat_id")
+active_chat = st.session_state.chat_threads.get(active_chat_id) if active_chat_id else None
+active_messages = active_chat.get("messages", []) if active_chat else []
+if not isinstance(active_messages, list):
+    active_messages = []
+    if active_chat:
+        active_chat["messages"] = active_messages
+
 if active_book:
     first, second, third = st.columns(3)
     with first:
@@ -666,17 +646,32 @@ if active_book:
         st.metric("Searchable passages", active_book.get("chunks", 0), border=True)
     with third:
         st.metric("Answer style", "Book-grounded", border=True)
-    st.markdown("### Your study session")
-    st.caption("CourseMate searches relevant pages before every answer.")
-else:
-    st.info("Your reading room is ready. Add a PDF above or open one from your bookshelf.", icon=":material/menu_book:")
-
-if active_book:
     render_study_mode(active_book)
 
-
-for message in st.session_state.messages:
-    render_message(message)
+if active_chat and active_messages:
+    st.markdown("### Conversation")
+    if not active_book:
+        st.info("This saved conversation has no book attached. Add or open a book above to ask more questions.")
+    for message in active_messages:
+        render_message(message)
+elif active_chat and active_book:
+    st.markdown(
+        "<div class='coursemate-empty-state'><strong>This chat is ready.</strong> "
+        "Ask a question below, or start with one of these prompts.</div>",
+        unsafe_allow_html=True,
+    )
+elif not active_chat:
+    st.markdown(
+        "<div class='coursemate-empty-state'><strong>Start with a fresh chat.</strong> "
+        "Open a saved conversation from the sidebar, click <em>New chat</em>, or add a PDF to begin.</div>",
+        unsafe_allow_html=True,
+    )
+elif active_chat and not active_book:
+    st.markdown(
+        "<div class='coursemate-empty-state'><strong>This is a new chat.</strong> "
+        "Add a PDF or open a saved book to start asking questions.</div>",
+        unsafe_allow_html=True,
+    )
 
 
 suggestions = [
@@ -685,8 +680,7 @@ suggestions = [
     ("Quiz me on this book", ":material/school:"),
 ]
 suggested_prompt = None
-if active_book and not st.session_state.messages:
-    st.markdown("#### Start with a question")
+if active_chat and active_book and not active_messages:
     suggestion_columns = st.columns(len(suggestions))
     for column, (label, icon) in zip(suggestion_columns, suggestions):
         with column:
@@ -701,23 +695,27 @@ if active_book and not st.session_state.messages:
                 suggested_prompt = label
 
 
+active_chat_id = st.session_state.get("active_chat_id") or "unassigned"
+question_input_key = f"question_input_{active_chat_id}"
 typed_prompt = st.chat_input(
     "Ask a question about your book…",
-    disabled=active_book is None,
-    key="question_input",
+    disabled=active_book is None or active_chat is None,
+    key=question_input_key,
     on_submit=title_chat_from_input,
+    args=(question_input_key,),
 )
 question = typed_prompt or suggested_prompt
 
 if question and active_book:
     active_chat_id = st.session_state.get("active_chat_id")
-    if active_chat_id and active_chat_id in st.session_state.chat_threads:
-        active_chat = st.session_state.chat_threads[active_chat_id]
+    active_chat = st.session_state.chat_threads.get(active_chat_id) if active_chat_id else None
+    active_messages = active_chat.get("messages", []) if active_chat else []
+    if active_chat:
         if active_chat.get("title") == "New chat":
             active_chat["title"] = question.replace("\n", " ").strip()[:36]
         touch_active_chat()
 
-    st.session_state.messages.append({"role": "user", "content": question})
+    active_messages.append({"role": "user", "content": question})
     persist_active_chat()
     with st.chat_message("user"):
         st.markdown(question)
@@ -766,12 +764,12 @@ if question and active_book:
                 answer = "I couldn't complete that answer. Check the Groq API key and connection, then try again."
                 st.error(answer)
 
-    st.session_state.messages.append(
+    active_messages.append(
         {"role": "assistant", "content": answer, "sources": sources}
     )
     persist_active_chat()
 
 st.markdown(
-    '<div class="coursemate-footer">© CourseMate Bishnuprasad 2026</div>',
+    '<div class="coursemate-footer">&copy; CourseMate Bishnuprasad</div>',
     unsafe_allow_html=True,
 )
