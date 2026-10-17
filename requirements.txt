@@ -1,5 +1,5 @@
 # ============================================
-# RAG Application — Groq API + ChromaDB
+# RAG Application — Groq API + in-memory vector search
 # Python: 3.12 recommended for broad compatibility
 # Install: uv pip install -r requirements.txt
 # ============================================
@@ -16,10 +16,6 @@ langchain-text-splitters
 langchain-classic
 langchain-huggingface
 
-# Vector database
-chromadb
-langchain-chroma
-
 # Embeddings (runs locally; downloads a model when first used)
 sentence-transformers
 
@@ -34,7 +30,7 @@ pydantic
 pydantic-settings
 
 # Web application UI
-streamlit
+streamlit>=1.66.0
 
 # Data handling / utilities
 numpy

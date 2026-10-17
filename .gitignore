@@ -10,9 +10,11 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 
-# Local vector database and model caches
-chroma_db/
+# Local model caches
 .cache/
+
+# Legacy generated vector data from older versions
+chroma_db/
 
 # Local editor and OS files
 .vscode/

@@ -1,11 +1,22 @@
 # CourseMate AI
 
-CourseMate AI is a command-line retrieval-augmented generation (RAG) assistant. It indexes the supplied deep-learning PDF in ChromaDB, retrieves relevant passages with maximum marginal relevance (MMR), and uses a Groq-hosted language model to answer questions from those passages.
+CourseMate AI is a dark-themed PDF study companion. Upload a book, ask questions about it, and follow each answer back to the relevant pages.
+
+## Features
+
+- Upload text-based PDF books up to 50 MB.
+- Search uploaded books with maximum marginal relevance (MMR).
+- Get answers grounded in the book, with supporting page excerpts.
+- Keep multiple chat threads and reopen earlier conversations during the current session.
+- Keep multiple books on a session-only bookshelf.
+- Build vector indexes in memory; CourseMate does not create a Chroma database or save an index to disk.
+
+The PDF is written to a temporary file only while its pages are extracted. The vector index stays in the running app's memory and is cleared when the browser session or app process ends. Upload and index the PDF again after restarting the app.
 
 ## Requirements
 
 - Python 3.12
-- A Groq API key
+- A Groq API key to ask questions. PDF indexing works without a key.
 
 ## Setup
 
@@ -18,47 +29,50 @@ python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-Create a local `.env` file from the example and add your Groq API key:
+Set the Groq key in a local `.env` file:
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-Edit `.env` and replace the placeholder value for `GROQ_API_KEY`. The `.env` file is ignored by Git; do not commit it.
+Edit `.env` and replace the placeholder value for `GROQ_API_KEY`. You can also configure the key with Streamlit secrets. The actual `.env` and `.streamlit/secrets.toml` files are ignored by Git.
 
-## Build the document index
+For Streamlit secrets, create `.streamlit/secrets.toml` with:
 
-The included `document loaders/deeplearning.pdf` is used as the source document. Create the ChromaDB index with:
-
-```powershell
-python create_database.py
+```toml
+GROQ_API_KEY = "your_groq_api_key_here"
 ```
 
-This creates a local `chroma_db/` directory. The first run also downloads the `sentence-transformers/all-MiniLM-L6-v2` embedding model.
+## Start the app
 
-## Ask questions
+```powershell
+streamlit run streamlit_app.py
+```
 
-Start the assistant after the index has been created:
+Upload a PDF and choose **Index this book**. The first indexing run downloads the local embedding model and can take a few minutes. When indexing finishes, open a suggested prompt or type a question in the chat box. Previously indexed PDFs remain available on the bookshelf for the current session.
+
+## Command-line mode
+
+The original command-line workflow uses the bundled deep-learning PDF and builds its index in memory when it starts:
 
 ```powershell
 python main.py
 ```
 
-Type a question about the indexed document. Enter `0` to exit. Answers are grounded in the retrieved document passages; when the passages do not contain an answer, the assistant says it could not find one in the document.
+To build the index and print its page and passage counts without starting a chat:
 
-## Other examples
-
-The `retrievers/` directory contains standalone examples for MMR, multi-query retrieval, and arXiv search. `vector store/DB.py` and `document loaders/` contain additional experiments with vector stores and document loaders.
+```powershell
+python create_database.py
+```
 
 ## Project layout
 
 ```text
 .
-├── create_database.py       # Loads the PDF, splits it, and creates the ChromaDB index
-├── main.py                  # Interactive RAG assistant
-├── document loaders/        # Source PDFs and document-loader examples
-├── retrievers/              # Retrieval examples
-└── vector store/            # Vector-store example
+├── streamlit_app.py          # Upload, session bookshelf, and chat interface
+├── create_database.py        # PDF parsing, chunking, and in-memory indexing
+├── main.py                   # Shared retrieval and answer generation
+├── document loaders/         # Sample PDFs and document-loader examples
+├── retrievers/               # Retrieval experiments
+└── vector store/             # In-memory vector-store example
 ```
-
-The `.env` file, Python environment, generated ChromaDB data, and local model cache are excluded from version control.
