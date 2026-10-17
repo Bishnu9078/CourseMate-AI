@@ -37,39 +37,30 @@ Books, PDFs, chats, and study progress are saved locally in the ignored `.course
 ## Project workflow
 
 ```mermaid
-flowchart TD
-    A([Start]) --> B[Upload a text-based PDF]
-    B --> C{PDF is valid and readable?}
-    C -- No --> D[Show an error and choose another PDF]
-    D --> B
-    C -- Yes --> E[Extract page text]
-    E --> F[Split text into overlapping passages]
-    F --> G[Create local embeddings]
-    G --> H[Build an in-memory vector index]
-    G --> I[Save PDF and book details locally]
-    H --> J{Choose an activity}
-
-    J -- Ask a question --> K[Find relevant passages with MMR]
-    K --> L[Send passages and question to the language model]
-    L --> M[Show a grounded answer with page references]
-    M --> J
-
-    J -- Study --> N[Generate flashcards or a quiz]
-    N --> O[Save conversations, study materials, and progress locally]
-    O --> J
-
-    I --> P[Restart the app]
-    P --> Q[Rebuild the in-memory index from the saved PDF]
-    Q --> J
+%%{init: {"themeVariables": {"fontSize": "12px"}, "flowchart": {"nodeSpacing": 18, "rankSpacing": 24}}}%%
+flowchart LR
+    A[Upload PDF] --> B{Readable?}
+    B -- No --> A
+    B -- Yes --> C[Extract & split text]
+    C --> D[Embed & index]
+    D --> E{Choose}
+    E -- Ask --> F[MMR search]
+    F --> G[Grounded answer<br/>with page refs]
+    E -- Study --> H[Flashcards or quiz]
+    G --> I[(Save chats, study tools & progress)]
+    H --> I
+    D --> J[(Save PDF locally)]
+    J -. Restart .-> K[Rebuild index]
+    K --> E
 
     classDef start fill:#dbeafe,stroke:#2563eb,color:#172554
     classDef process fill:#f1f5f9,stroke:#64748b,color:#0f172a
     classDef decision fill:#fef3c7,stroke:#d97706,color:#78350f
     classDef result fill:#dcfce7,stroke:#16a34a,color:#14532d
     class A start
-    class C,J decision
-    class M,O result
-    class B,D,E,F,G,H,I,K,L,N,P,Q process
+    class B,E decision
+    class G,I result
+    class C,D,F,H,J,K process
 ```
 
 ## Setup
