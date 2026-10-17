@@ -14,6 +14,18 @@ CourseMate AI is a dark-themed PDF study companion. Upload a book, ask questions
 - Start each new session with a blank chat view; reopen saved conversations independently from the sidebar.
 - Build vector indexes in memory and rebuild them from saved PDFs when needed.
 
+## Technologies used
+
+- Python 3.12.
+- Streamlit for the web interface.
+- A Groq API key for answers, flashcards, and quizzes. PDF indexing works without a key.
+- LangChain `ChatGroq` with the `openai/gpt-oss-120b` model for generation.
+- LangChain `PyPDFLoader` and `RecursiveCharacterTextSplitter` to load PDFs and create searchable passages.
+- Hugging Face `sentence-transformers/all-MiniLM-L6-v2` for local text embeddings.
+- LangChain `InMemoryVectorStore` and maximum marginal relevance (MMR) retrieval to find relevant passages.
+- SQLite (`sqlite3`) for local books, PDFs, chats, notes, and study progress.
+- `python-dotenv` and Streamlit secrets for API key configuration.
+
 Books, PDFs, chats, and study progress are saved locally in the ignored `.coursemate/` directory. A temporary working copy is used during page extraction; vector indexes stay in memory and are rebuilt from the saved PDFs after an app restart. This local store is shared by sessions using the same app installation.
 
 ## Requirements
