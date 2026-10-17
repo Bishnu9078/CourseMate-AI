@@ -1,6 +1,6 @@
 # CourseMate AI
 
-CourseMate AI is a dark-themed PDF study companion. Upload a book, ask questions about it, and follow each answer back to the relevant pages.
+CourseMate AI is a dark-themed, RAG-based PDF study companion. It indexes uploaded books, retrieves relevant passages for each question, and uses those passages to generate answers with page references.
 
 ## Features
 
@@ -20,6 +20,7 @@ CourseMate AI is a dark-themed PDF study companion. Upload a book, ask questions
 - Streamlit for the web interface.
 - A Groq API key for answers, flashcards, and quizzes. PDF indexing works without a key.
 - LangChain `ChatGroq` with the `openai/gpt-oss-120b` model for generation.
+- RAG workflow: `create_database.py` loads, chunks, embeds, and indexes PDF text; `main.py` retrieves relevant passages with MMR and sends them with the question to the model for a book-grounded answer.
 - LangChain `PyPDFLoader` and `RecursiveCharacterTextSplitter` to load PDFs and create searchable passages.
 - Hugging Face `sentence-transformers/all-MiniLM-L6-v2` for local text embeddings.
 - LangChain `InMemoryVectorStore` and maximum marginal relevance (MMR) retrieval to find relevant passages.
