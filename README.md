@@ -34,6 +34,14 @@ Books, PDFs, chats, and study progress are saved locally in the ignored `.course
 - Python 3.12
 - A Groq API key to ask questions. PDF indexing works without a key.
 
+## Project workflow
+
+1. Upload a text-based PDF in the Streamlit app and choose **Index this book**.
+2. CourseMate extracts the pages, splits their text into overlapping passages, and creates local embeddings for search.
+3. The PDF and book details are saved locally. The searchable vector index stays in memory and can be rebuilt from the saved PDF after a restart.
+4. When you ask a question, CourseMate uses maximum marginal relevance (MMR) to find relevant passages, then sends those passages and your question to the language model for a book-grounded answer with page references.
+5. You can also generate flashcards or a quiz from the book. Conversations, study materials, and progress are saved locally.
+
 ## Setup
 
 From the project root, create and activate a virtual environment, then install the dependencies:
