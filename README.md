@@ -8,7 +8,7 @@ CourseMate AI is a dark-themed PDF study companion. Upload a book, ask questions
 - Search uploaded books with maximum marginal relevance (MMR).
 - Get answers grounded in the book, with supporting page excerpts.
 - Generate page-cited flashcards and multiple-choice quizzes from a book.
-- Track learned flashcards and save quiz scores.
+- Track learned flashcards and save quiz scores separately for each chat.
 - Keep multiple books and chat threads across app restarts.
 - Use the refreshed Streamlit reading-room interface for books, chats, and study tools.
 - Start each new session with a blank chat view; reopen saved conversations independently from the sidebar.

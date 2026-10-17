@@ -82,13 +82,18 @@ def book_fingerprint(book: dict[str, str | int] | None) -> str | None:
     return fingerprint if re.fullmatch(r"[0-9a-f]{64}", fingerprint) else None
 
 
+# Bump this cache key whenever CourseMateStore's schema or public methods change.
+STORE_SCHEMA_VERSION = 2
+
+
 @st.cache_resource
-def get_store() -> CourseMateStore:
+def get_store(schema_version: int) -> CourseMateStore:
+    _ = schema_version  # Included in Streamlit's cache key to replace stale store objects.
     return CourseMateStore()
 
 
-STORE = get_store()
-APP_STATE_VERSION = 4
+STORE = get_store(STORE_SCHEMA_VERSION)
+APP_STATE_VERSION = 5
 
 for state_key, default_value in (
     ("active_book", None),
@@ -347,14 +352,19 @@ def _format_pages(pages: list[int]) -> str:
     return ", ".join(f"p. {page}" for page in pages) if pages else "page reference unavailable"
 
 
-def render_study_mode(book: dict[str, str | int]) -> None:
+def render_study_mode(book: dict[str, str | int], chat_id: str | None) -> None:
     fingerprint = book_fingerprint(book)
-    if not fingerprint:
+    if not fingerprint or not chat_id:
         return
-    materials_by_book = st.session_state.study_materials
-    if fingerprint not in materials_by_book:
-        materials_by_book[fingerprint] = STORE.load_study_materials(fingerprint)
-    materials = materials_by_book[fingerprint]
+    materials_by_chat = st.session_state.study_materials
+    chat_materials = materials_by_chat.get(chat_id)
+    if not isinstance(chat_materials, dict):
+        chat_materials = {}
+        materials_by_chat[chat_id] = chat_materials
+    if fingerprint not in chat_materials:
+        chat_materials[fingerprint] = STORE.load_chat_study_materials(chat_id, fingerprint)
+    materials = chat_materials[fingerprint]
+    widget_scope = f"{chat_id}_{fingerprint}"
 
     with st.expander("Study mode · flashcards and quiz", expanded=False):
         st.caption("Generated questions use retrieved passages from this book and keep their page references.")
@@ -364,14 +374,14 @@ def render_study_mode(book: dict[str, str | int]) -> None:
                 "Generate flashcards",
                 icon=":material/style:",
                 width="stretch",
-                key=f"generate_flashcards_{fingerprint}",
+                key=f"generate_flashcards_{widget_scope}",
             )
         with quiz_column:
             make_quiz = st.button(
                 "Generate quiz",
                 icon=":material/quiz:",
                 width="stretch",
-                key=f"generate_quiz_{fingerprint}",
+                key=f"generate_quiz_{widget_scope}",
             )
 
         if make_flashcards or make_quiz:
@@ -391,11 +401,15 @@ def render_study_mode(book: dict[str, str | int]) -> None:
                         if make_flashcards:
                             material = generate_flashcards(vectorstore, llm)
                             materials["flashcards"] = material
-                            STORE.save_study_material(fingerprint, "flashcards", material)
+                            STORE.save_chat_study_material(
+                                chat_id, fingerprint, "flashcards", material
+                            )
                         else:
                             material = generate_quiz(vectorstore, llm)
                             materials["quiz"] = material
-                            STORE.save_study_material(fingerprint, "quiz", material)
+                            STORE.save_chat_study_material(
+                                chat_id, fingerprint, "quiz", material
+                            )
                         progress.update(label=f"Your {action} is ready", state="complete", expanded=False)
                 except Exception as error:
                     if progress is not None:
@@ -434,21 +448,25 @@ def render_study_mode(book: dict[str, str | int]) -> None:
                     with st.expander("Show answer"):
                         st.write(card.get("back", ""))
                         st.caption(f"Source: {_format_pages(card.get('pages', []))}")
-                    known_key = f"known_{fingerprint}_{flashcards.get('id', 'saved')}_{index}"
+                    known_key = (
+                        f"known_{widget_scope}_{flashcards.get('id', 'saved')}_{index}"
+                    )
                     if known_key not in st.session_state:
                         st.session_state[known_key] = index in known_before
                     if st.checkbox("Mark as learned", key=known_key):
                         known_now.add(index)
             if known_now != known_before:
                 flashcards["known_indices"] = sorted(known_now)
-                STORE.save_study_material(fingerprint, "flashcards", flashcards)
+                STORE.save_chat_study_material(
+                    chat_id, fingerprint, "flashcards", flashcards
+                )
 
         quiz = materials.get("quiz")
         if quiz and quiz.get("questions"):
             questions = quiz["questions"]
             st.markdown(f"#### Practice quiz · {len(questions)} questions")
             selected_answers = {}
-            with st.form(f"quiz_form_{fingerprint}_{quiz.get('id', 'saved')}"):
+            with st.form(f"quiz_form_{widget_scope}_{quiz.get('id', 'saved')}"):
                 for index, item in enumerate(questions):
                     labels = [
                         f"{letter}. {item.get('options', {}).get(letter, '')}"
@@ -457,7 +475,7 @@ def render_study_mode(book: dict[str, str | int]) -> None:
                     selected_answers[str(index)] = st.radio(
                         f"{index + 1}. {item.get('question', '')}",
                         options=["Select an answer"] + labels,
-                        key=f"quiz_answer_{fingerprint}_{quiz.get('id', 'saved')}_{index}",
+                        key=f"quiz_answer_{widget_scope}_{quiz.get('id', 'saved')}_{index}",
                     )
                 submitted = st.form_submit_button("Check answers", width="stretch")
 
@@ -472,7 +490,7 @@ def render_study_mode(book: dict[str, str | int]) -> None:
                 )
                 quiz["answers"] = answers
                 quiz["score"] = score
-                STORE.save_study_material(fingerprint, "quiz", quiz)
+                STORE.save_chat_study_material(chat_id, fingerprint, "quiz", quiz)
 
             if quiz.get("score") is not None and isinstance(quiz.get("answers"), dict):
                 st.success(f"Score: {quiz['score']} of {len(questions)}")
@@ -646,7 +664,7 @@ if active_book:
         st.metric("Searchable passages", active_book.get("chunks", 0), border=True)
     with third:
         st.metric("Answer style", "Book-grounded", border=True)
-    render_study_mode(active_book)
+    render_study_mode(active_book, active_chat_id)
 
 if active_chat and active_messages:
     st.markdown("### Conversation")
@@ -697,13 +715,18 @@ if active_chat and active_book and not active_messages:
 
 active_chat_id = st.session_state.get("active_chat_id") or "unassigned"
 question_input_key = f"question_input_{active_chat_id}"
-typed_prompt = st.chat_input(
-    "Ask a question about your book…",
-    disabled=active_book is None or active_chat is None,
-    key=question_input_key,
-    on_submit=title_chat_from_input,
-    args=(question_input_key,),
-)
+with st.bottom:
+    typed_prompt = st.chat_input(
+        "Ask a question about your book…",
+        disabled=active_book is None or active_chat is None,
+        key=question_input_key,
+        on_submit=title_chat_from_input,
+        args=(question_input_key,),
+    )
+    st.markdown(
+        '<div class="coursemate-footer">&copy; CourseMate Bishnuprasad</div>',
+        unsafe_allow_html=True,
+    )
 question = typed_prompt or suggested_prompt
 
 if question and active_book:
@@ -768,8 +791,3 @@ if question and active_book:
         {"role": "assistant", "content": answer, "sources": sources}
     )
     persist_active_chat()
-
-st.markdown(
-    '<div class="coursemate-footer">&copy; CourseMate Bishnuprasad</div>',
-    unsafe_allow_html=True,
-)

@@ -78,6 +78,49 @@ class CourseMateStore:
                     updated_at TEXT NOT NULL,
                     PRIMARY KEY (fingerprint, kind)
                 );
+
+                CREATE TABLE IF NOT EXISTS chat_study_materials (
+                    chat_id TEXT NOT NULL,
+                    fingerprint TEXT NOT NULL,
+                    kind TEXT NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (chat_id, fingerprint, kind)
+                );
+                """
+            )
+            # Older versions stored study materials only by book. Attach each
+            # legacy item to the latest matching conversation with messages;
+            # if there is none, use the oldest matching chat. This avoids
+            # attaching old progress to a newer blank chat.
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO chat_study_materials
+                    (chat_id, fingerprint, kind, payload_json, updated_at)
+                SELECT COALESCE(
+                    (
+                        SELECT chats.chat_id
+                        FROM chats
+                        WHERE chats.fingerprint = study_materials.fingerprint
+                          AND chats.messages_json <> '[]'
+                        ORDER BY chats.updated_at DESC
+                        LIMIT 1
+                    ),
+                    (
+                        SELECT chats.chat_id
+                        FROM chats
+                        WHERE chats.fingerprint = study_materials.fingerprint
+                        ORDER BY chats.rowid ASC
+                        LIMIT 1
+                    )
+                ), study_materials.fingerprint, study_materials.kind,
+                   study_materials.payload_json, study_materials.updated_at
+                FROM study_materials
+                WHERE EXISTS (
+                    SELECT 1
+                    FROM chats
+                    WHERE chats.fingerprint = study_materials.fingerprint
+                )
                 """
             )
 
@@ -222,6 +265,47 @@ class CourseMateStore:
                 WHERE fingerprint = ?
                 """,
                 (fingerprint,),
+            ).fetchall()
+
+        materials: dict[str, dict] = {}
+        for row in rows:
+            try:
+                payload = json.loads(row["payload_json"])
+            except (TypeError, json.JSONDecodeError):
+                continue
+            if isinstance(payload, dict):
+                materials[str(row["kind"])] = payload
+        return materials
+
+    def save_chat_study_material(
+        self, chat_id: str, fingerprint: str, kind: str, payload: dict
+    ) -> None:
+        if kind not in {"flashcards", "quiz"}:
+            raise ValueError("Unsupported study material type.")
+        payload_json = json.dumps(payload, ensure_ascii=False)
+        with self._connection() as connection:
+            connection.execute(
+                """
+                INSERT INTO chat_study_materials
+                    (chat_id, fingerprint, kind, payload_json, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(chat_id, fingerprint, kind) DO UPDATE SET
+                    payload_json = excluded.payload_json,
+                    updated_at = excluded.updated_at
+                """,
+                (chat_id, fingerprint, kind, payload_json, _timestamp()),
+            )
+
+    def load_chat_study_materials(
+        self, chat_id: str, fingerprint: str
+    ) -> dict[str, dict]:
+        with self._connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT kind, payload_json FROM chat_study_materials
+                WHERE chat_id = ? AND fingerprint = ?
+                """,
+                (chat_id, fingerprint),
             ).fetchall()
 
         materials: dict[str, dict] = {}
