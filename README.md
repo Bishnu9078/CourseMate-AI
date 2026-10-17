@@ -125,6 +125,10 @@ To build the index and print its page and passage counts without starting a chat
 python create_database.py
 ```
 
+## License
+
+Copyright © 2026 Bishnuprasad Sahoo (GitHub: [Bishnu9078](https://github.com/Bishnu9078)). Licensed under the [MIT License](LICENSE).
+
 ## Conclusion
 
 CourseMate AI turns PDF books into searchable study resources. It answers questions with relevant passages and page references, and helps you review with flashcards and quizzes. Books, conversations, and study progress are saved locally for future sessions.

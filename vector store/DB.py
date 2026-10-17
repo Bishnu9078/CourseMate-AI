@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Bishnuprasad Sahoo (GitHub: Bishnu9078)
+# Licensed under the MIT License. See LICENSE in the project root.
+
 from langchain_core.documents import Document
 from langchain_core.vectorstores import InMemoryVectorStore
 from langchain_huggingface import HuggingFaceEmbeddings

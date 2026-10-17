@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Bishnuprasad Sahoo (GitHub: Bishnu9078)
+# Licensed under the MIT License. See LICENSE in the project root.
+
 from langchain_community.document_loaders import WebBaseLoader
 
 url = "https://www.apple.com/in/shop/buy-mac/mac-mini/m6-chip-12-core-cpu-12-core-gpu-16gb-memory-256gb-storage"

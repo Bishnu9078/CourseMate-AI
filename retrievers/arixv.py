@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Bishnuprasad Sahoo (GitHub: Bishnu9078)
+# Licensed under the MIT License. See LICENSE in the project root.
 
 import arxiv
 

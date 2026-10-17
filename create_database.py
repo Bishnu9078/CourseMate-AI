@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Bishnuprasad Sahoo (GitHub: Bishnu9078)
+# Licensed under the MIT License. See LICENSE in the project root.
+
 """Load PDF books into an in-memory vector store for CourseMate AI."""
 
 from __future__ import annotations

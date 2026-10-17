@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Bishnuprasad Sahoo (GitHub: Bishnu9078)
+# Licensed under the MIT License. See LICENSE in the project root.
+
 from dotenv import load_dotenv
 from langchain_classic.retrievers.multi_query import MultiQueryRetriever
 from langchain_core.documents import Document

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Bishnuprasad Sahoo (GitHub: Bishnu9078)
+# Licensed under the MIT License. See LICENSE in the project root.
+
 from langchain_community.document_loaders import TextLoader
 
 from langchain_text_splitters import CharacterTextSplitter

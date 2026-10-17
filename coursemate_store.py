@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Bishnuprasad Sahoo (GitHub: Bishnu9078)
+# Licensed under the MIT License. See LICENSE in the project root.
+
 """Local SQLite persistence for books, chats, notes, and study progress."""
 
 from __future__ import annotations

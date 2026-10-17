@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Bishnuprasad Sahoo (GitHub: Bishnu9078)
+# Licensed under the MIT License. See LICENSE in the project root.
+
 """Reusable retrieval and answer-generation functions for CourseMate AI."""
 
 from __future__ import annotations
