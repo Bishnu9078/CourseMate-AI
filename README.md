@@ -1,6 +1,6 @@
 # CourseMate AI
 
-CourseMate AI is a dark-themed, RAG-based PDF study companion. It indexes uploaded books, retrieves relevant passages for each question, and uses those passages to generate answers with page references.
+CourseMate AI is a RAG-based PDF study companion. It indexes uploaded books, retrieves relevant passages for each question, and uses those passages to generate answers with page references.
 
 ## Features
 
@@ -124,3 +124,7 @@ To build the index and print its page and passage counts without starting a chat
 ```powershell
 python create_database.py
 ```
+
+## Conclusion
+
+CourseMate AI turns PDF books into searchable study resources. It answers questions with relevant passages and page references, and helps you review with flashcards and quizzes. Books, conversations, and study progress are saved locally for future sessions.
